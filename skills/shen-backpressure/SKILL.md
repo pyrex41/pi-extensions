@@ -1,54 +1,33 @@
 ---
 name: shen-backpressure
-description: Formal backpressure for AI coding through Shen sequent-calculus types, shengen guard generation, and optional shen-derive spec-equivalence checks. Activates when the user mentions formal verification, Shen types, guard types, backpressure, invariant enforcement, or spec-vs-implementation verification.
+description: Shen specifications, guard constructors, verification gates and backpressure in explicitly configured SB projects.
 ---
 
-# Shen-Backpressure
+# Shen-Backpressure for Pi
 
-Formal type specs (Shen sequent calculus) plus a codegen bridge (shengen) that emits guard types with opaque constructors. The target-language compiler enforces the spec: you cannot construct a value without proving its preconditions.
+Use `sb` op `context` to inspect the project's actual spec, output path, proof chain and gate pipeline. Do not assume `specs/core.shen`, fixed constructor names, or a fixed gate count. Do not scrape internal CLI logs for gate status.
 
-Use the `sb` tool. Do not scrape logs or invent gate commands.
+SB requires a trusted project with `sb.toml` at cwd or an ancestor within the repository. `[paths] spec` and `output` must be explicit and the spec must exist. Nested sketches are not activated automatically. Report missing configuration; do not present convention-derived defaults as a live project.
 
-## Why this works
+`init` requires human confirmation (or the user's explicit headless `--allow-sb-init` flag). It skips Claude skills. Never initialize without approval.
 
-Guard types use module-private fields:
+## Workflow
 
-- Go: unexported struct fields
-- TypeScript: `private` class fields
-- Rust: private / `pub(crate)` fields
+1. Wrap raw inputs with generated constructors at boundaries; follow the actual proof chain.
+2. Never bypass constructors, ignore their errors, or hand-edit generated guards.
+3. Change the real spec and run `gen` when regeneration is needed.
+4. Run `gates` after changes. Fix failures before continuing or completing the task.
+5. `derive` checks equivalence; intentional rewrites use `regen: true`. `audit` shows the SB discharge report.
 
-If a function requires `TenantAccess`, the caller must have gone through `NewTenantAccess(...)`. Skipping a step fails the build (gate 3), and that failure is injected as backpressure.
-
-The LLM does not police this. The compiler does.
+Only `gates` establishes passing evidence. Successful context/audit commands cannot clear a failed gate state. Pi blocks direct edit/write of the configured generated output and requires fresh gate evidence before SCUD done/commit. File changes, generation, shell calls and reload invalidate evidence. These checks do not sandbox arbitrary shell commands or external writers, and do not prove facts beyond the configured spec/TCB/gates.
 
 ## Commands
 
-- `sb` op `init` — scaffold `specs/core.shen` and `sb.toml`
-- `sb` op `context` — live guard types, proof chain, gates, latest failure
-- `sb` op `gen` — regenerate guard types
-- `sb` op `gates` — run the manifest pipeline
-- `sb` op `derive` — spec-equivalence drift (`regen: true` to rewrite)
-- `sb` op `audit` — discharge report
-- `/sb` and `/sb-gates` — the same from the prompt bar
+- `/sb`: context report, retained in the transcript/model history.
+- `/sb-gates`: run gates and retain the bounded report without starting a model turn.
+- `/sb-fix`: prompt the agent to investigate and fix backpressure (distinct from the command).
+- `/sb-cancel`: cancel an active slash command; Escape also cancels in the TUI.
 
-## Guard-type discipline
+Outputs are bounded to a 24 KiB/950-line tail. Keep credentials out of gate output. See [the package README](../../README.md) for fingerprint coverage, concurrency and execution limits.
 
-1. Wrap at the boundary (HTTP, CLI, consumers).
-2. Trust internally — functions take and return guard types.
-3. Follow the proof chain from `sb` op `context`.
-4. Extract with accessors for SQL/JSON.
-
-Never edit generated guard files. Never bypass constructors. Never ignore constructor errors. Never duplicate constructor validation.
-
-## When a gate fails
-
-| Gate | Failure means | Fix |
-|------|--------------|-----|
-| shengen | Spec syntax | Fix `specs/core.shen` |
-| test | Constructor rejected input, or handler skipped guards | Fix tests or handlers |
-| build | Spec evolved, code uses old signatures | Update call sites |
-| shen tc+ | Spec inconsistent | Fix contradictory rules |
-| tcb audit | Hand-edited generated files | Regen; remove extras from shenguard/ |
-| shen-derive | Drift or impl mismatch | Review diff; `derive` with `regen` if intentional |
-
-Headless Ralph loops stay on the `sb loop` CLI (`RALPH_HARNESS` can point at `pi -p`). This extension is the interactive surface.
+Headless Ralph loops remain on `sb loop`; explicitly configure `RALPH_HARNESS="pi -p"` when desired. The extension does not silently change a manifest's harness or migrate another project's configuration.

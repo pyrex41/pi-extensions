@@ -1,74 +1,106 @@
-# pi-extensions
+# Pi extensions: SCUD + Shen-Backpressure
 
-Pi coding-agent extensions for [SCUD](https://github.com/pyrex41/scud) and [Shen-Backpressure](https://github.com/pyrex41/Shen-Backpressure).
+Project-local DAG tasks and verification workflows for Pi. Requires **Pi 0.85.1+**, **Node 22.18+**, and the `scud` / `sb` CLIs for the integrations you enable. Tested with SCUD 2.7.2 and SB 0.3.0; CI also builds pinned upstream revisions.
 
-This package follows the same shape as [pi-todotools](https://github.com/code-yeongyu/pi-todotools): one op-based `todo` tool, a sidebar widget, prompt guidance, and a `/todos` command. The list is not session-local. It is the project's SCUD DAG.
-
-Shen-Backpressure is a second extension: an `sb` tool plus `/sb` and `/sb-gates`, injecting live `sb context` when `sb.toml` is present.
-
-## Install
-
-Requires the `scud` and `sb` CLIs on `PATH` (or `SCUD_BIN` / `SB_BIN`). Pi 0.85+.
+## Install / upgrade
 
 ```bash
-# from a local checkout (no npm install; Pi loads TypeScript in place)
-pi install /absolute/path/to/pi-extensions
-
-# from git
 pi install git:github.com/pyrex41/pi-extensions
+# Then /reload inside an already-running Pi session.
 ```
 
-Pi already provides `@earendil-works/pi-*` and `typebox` at runtime. They are optional peerDependencies so `pi install git:…` does not download the Pi SDK into the clone.
+For a reproducible install, append `@<commit>` to the git source. Remove a previous **local-path** install before switching to git: Pi considers those separate packages and would otherwise register duplicate tools.
 
-Remove any other extension that owns the `todo` tool name first:
+For development:
 
 ```bash
-pi remove <the-other-todo-extension>
+npm ci
+pi install /absolute/path/to/pi-extensions
 ```
 
-## SCUD todo
+Pi supplies the SDK and TypeBox at runtime. They are optional peers and development dependencies, not bundled runtime dependencies. `smol-toml` is the only runtime dependency. Package installs omit development dependencies; local development uses `npm ci`.
 
-The `todo` tool shells out to `scud -C <cwd>`. Ops map to the MCP core set plus waves/tags/init:
+Binary selection: `SCUD_BIN` / `SB_BIN` overrides, then executable lookup on `PATH`, then `~/.local/bin` and `~/go/bin`. Nothing is installed automatically.
 
-| op | scud |
+## Opt-in and project roots
+
+Tools are available globally, but **no project is initialized automatically**. Workflow prompt sections and widgets activate only for configured projects. Initialization requires interactive/RPC confirmation; unattended runs require the explicit `--allow-scud-init` or `--allow-sb-init` flag.
+
+Root discovery searches cwd and ancestors, stopping at the repository boundary. It never searches descendant directories or activates nested manifest sketches. A trusted Pi project is required to read task/configuration state or run manifest commands.
+
+- SCUD: `.scud/` is the opt-in marker. Pi initialization stages the upstream scaffold and installs **only `.scud/`**, not Claude/OpenCode skills.
+- SB: `sb.toml` must explicitly declare `[paths] spec` and `output`, with an existing spec inside the project. Missing/invalid configuration produces an error, **not convention-derived imaginary context**. Gate definitions remain owned by SB; no fixed gate count or spec filename is assumed.
+
+## SCUD
+
+Use `todo` with an `op`:
+
+| Operation | Parameters / behavior |
 |---|---|
-| `init` | `scud init` (+ optional `create`) |
-| `warmup` | `scud warmup --json` |
-| `next` | `scud next` |
-| `list` / `show` / `stats` / `waves` | JSON forms |
-| `start` / `done` / `drop` | `set-status in-progress` / `done` / `cancelled` |
-| `append` | `scud create --title` |
-| `commit` | `scud commit` |
-| `tags` | `scud tags` |
+| `init` | Optional `tag` (default `main`), `items`; explicit approval required |
+| `warmup`, `next`, `list`, `show`, `stats`, `waves`, `tags` | Inspect the DAG; `show` requires `id`; `list` accepts `status`; `tag` selects the phase where supported |
+| `append` | `title` or `items`; optional `tag`, `priority`, `complexity` |
+| `dependencies` | `id`, optional `tag`, replacement `dependencies`; `[]` clears edges |
+| `start` | Claim a ready task using `id` and optional `tag` |
+| `release` | Release your claim and return the task to pending |
+| `done`, `drop` | Complete/cancel your claimed task and release it |
+| `commit` | `id`, optional `tag`/`message`; commits **already-staged** files with `[tag:id]` prefix |
 
-`/todos` prints warmup + list. The sidebar widget shows tag, counts, and the next ready task.
+Sequence: **warmup → next → start → work → verify → commit (if requested) → done**. Commit requires the explicit task and its session-owned claim; it never selects another in-progress task or stages unrelated files.
+
+Dependencies are phase-local. Unknown IDs, cycles (including inherited parent dependencies), edits to non-pending tasks, and unmet dependencies at claim time are rejected. SCUD 2.7 lacks a dependency mutation command, so Pi uses SCUD's own JSON/SCG converter and an atomic file replacement, with a concurrent-change check.
+
+### Coordination and recovery
+
+`.scud/pi-operation.lock/` serializes operations across cooperating Pi sessions. `.scud/pi-claims.json` records owners using stable Pi session IDs. Claims survive `/reload` and resume; forks/new sessions have different owners. A second session cannot claim or finish the same task. Starting your already-owned task is idempotent.
+
+**This does not coordinate with standalone `scud`, swarm, or other writers. Do not run those concurrently with Pi mutations.** In particular, the CLI uses a different locking protocol; the dependency update's change check does not eliminate every external-writer race.
+
+- `/todos`: bounded report in the transcript and model history; no custom modal renderer.
+- `/scud-release TAG ID`: human-confirmed recovery after the previous worker has stopped. Resets an in-progress task to pending and removes its Pi claim.
+- After a process crash, inspect `.scud/pi-operation.lock/owner.json` and confirm that worker has stopped before manually removing the lock directory. Locks are never silently stolen on a timer.
+- Pre-existing CLI-created in-progress tasks must be deliberately returned to pending before Pi can claim them.
+
+Ignore `.scud/pi-claims.json`, `.scud/pi-claims.json.tmp`, `.scud/pi-operation.lock/`, and `.scud/deps-*/` in application repositories; they are local coordination state, not shared task definitions.
 
 ## Shen-Backpressure
 
-| op | sb |
+| `sb` operation | Behavior |
 |---|---|
-| `context` | `sb context -format markdown` |
-| `gates` | `sb gates` |
-| `gen` | `sb gen` |
-| `derive` | `sb derive` (`regen: true` → `-regen`) |
-| `audit` | `sb audit-report` |
-| `init` | `sb init -config -no-skills` |
+| `context` | Manifest/spec context; optional `format: json`, `evidence: true` |
+| `gates` | Execute the manifest's pipeline and establish verification evidence |
+| `gen` | Regenerate guards and invalidate prior evidence |
+| `derive` | Check equivalence; `regen: true` rewrites derived files and invalidates evidence |
+| `audit` | SB's discharge audit report |
+| `init` | Explicitly approved scaffold; optional `lang: go` or `ts`; skips Claude skills |
 
-When `sb.toml` exists, each agent turn gets the methodology block plus live `sb context`. Failures are backpressure: fix the gate before new work. Do not edit generated guard files.
+- `/sb` and `/sb-gates` execute directly and retain the bounded report **immediately** in the transcript/model history, without initiating a model turn.
+- `/sb-fix` is a distinct prompt template that asks the agent to investigate and resolve failures. It no longer collides with `/sb-gates`.
+- Escape cancels a TUI command; `/sb-cancel` cancels an active slash command in TUI/RPC. Tool calls use Pi's abort signal; session shutdown cancels active slash commands.
+- Live context is requested through the tool/command, not spawned and injected into the system prompt on every user message.
 
-Headless Ralph loops stay on `sb loop` (`RALPH_HARNESS` can point at `pi -p`). This package is the interactive surface.
+### Enforcement and its limits
 
-## Layout
+Only successful **gates** establish a passing state. Context/audit success never clears failed verification. The widget separately tracks unknown/running/failed/stale/passed gate state.
 
-```
-extensions/scud/                 todo tool, widget, /todos
-extensions/shen-backpressure/    sb tool, /sb, /sb-gates
-skills/                          pi skills
-prompts/                         /scud-next, /sb-gates templates
-```
+Pi blocks `edit`/`write` against the configured generated output, including path/symlink aliases. SCUD `done` and `commit` require a successful gate run matching current file contents. Successful evidence is invalidated conservatively after every `bash`, `edit`, or `write` result, as well as generation. External file changes are detected again when completing/committing. Reload starts with unknown evidence.
 
-## Tests
+Fingerprints include file contents and modes, using tracked/nonignored files in Git projects (a directory walk otherwise), with cache/build exclusions: `.git`, `.sb`, `.scud`, `.pi`, `node_modules`, `dist`, `coverage`, `.venv`. The manifest, spec, and configured output are always included even if ignored. External and directory symlink inputs fail closed. Inputs changing during gates invalidate the run; generated-output changes from the pipeline are expected.
+
+**This is workflow enforcement, not a sandbox or a claim of complete proof.** It cannot stop arbitrary shell writes, standalone git/SCUD commands, other processes, forged tool implementations, or a final conversational answer. It does not fingerprint external services, environment variables, ignored dependency trees, or all outputs of arbitrary custom generators. Keep independent SB/CI checks for merge/release enforcement, and keep secrets out of command output. Formal guarantees depend on the actual spec, trusted code base and gates, not the prompt text.
+
+## Execution safety
+
+CLI failures throw actual Pi tool errors. Processes receive cancellation and deadlines, with process-tree termination and forced-kill escalation. Windows uses `taskkill /T /F`; CI exercises macOS/Linux.
+
+Output buffers are bounded while running. Model-visible reports retain a **24 KiB / 950-line tail** with an explicit discard notice. Excess output is discarded; no unredacted full-output log is written. Internal SCUD JSON conversion/file listing has a separate bounded 8 MiB capacity and refuses truncated input. Use task filters/`show` or a narrower gate to inspect oversized reports.
+
+## Verification
 
 ```bash
-npm test
+npm ci
+npm run check       # strict TypeScript + unit/integration tests
+npm pack --dry-run
 ```
+
+Tests include the real Pi RPC loader/report delivery, process cancellation/descendants, initialization consent, root/trust boundaries, dependency cycles, competing session claims, explicitly scoped commits, guard protection and gate freshness. Real CLI tests skip when their binary is unavailable; CI builds pinned upstream CLIs on macOS and Linux so those tests run.

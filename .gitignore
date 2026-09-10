@@ -4,3 +4,8 @@ node_modules/
 coverage/
 .pi/
 dist/
+.ci/
+.scud/
+.scud-init-*/
+.claude/
+.opencode/
