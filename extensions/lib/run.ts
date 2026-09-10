@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { accessSync, constants } from "node:fs";
+import { accessSync, constants, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
 
@@ -35,7 +35,7 @@ export function findOnPath(name: string, extraDirs: string[] = []): string | und
 		...extraDirs, ...(process.env.PATH ?? "").split(delimiter),
 		join(homedir(), ".local/bin"), join(homedir(), "go/bin"),
 	].filter(Boolean).map(dir => join(dir, name));
-	return candidates.find(path => { try { accessSync(path, constants.X_OK); return true; } catch { return false; } });
+	return candidates.find(path => { try { accessSync(path, constants.X_OK); return statSync(path).isFile(); } catch { return false; } });
 }
 
 export function missingBinMessage(name: string, hint: string): string { return `${name} executable not found. ${hint}`; }
@@ -98,6 +98,6 @@ export function formatRun(result: RunResult): string {
 }
 export function bounded(text: string): string { const buffer = new OutputBuffer(); buffer.add(text); return buffer.value(); }
 export function checked(result: RunResult): RunResult {
-	if (!result.ok) throw new Error(formatRun(result));
+	if (!result.ok) throw new Error(bounded(formatRun(result)));
 	return result;
 }

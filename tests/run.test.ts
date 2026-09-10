@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { MAX_OUTPUT_BYTES, runBin } from "../extensions/lib/run.ts";
+import { MAX_OUTPUT_BYTES, checked, runBin } from "../extensions/lib/run.ts";
 
 test("pre-aborted operations never execute", async () => {
 	const controller = new AbortController(); controller.abort();
@@ -16,6 +16,14 @@ test("output is bounded during capture, retains tail and reports discard", async
 	assert.ok(Buffer.byteLength(result.stdout) < MAX_OUTPUT_BYTES + 100);
 	assert.ok(result.stdout.startsWith("[Earlier output discarded")); assert.ok(result.stdout.endsWith("TAIL"));
 	assert.ok(Buffer.byteLength(result.stderr) < MAX_OUTPUT_BYTES + 100);
+});
+test("machine-output failures are bounded before becoming Pi errors", () => {
+	assert.throws(() => checked({ ok: false, code: 1, stdout: "x".repeat(100000), stderr: "failure detail" }), error => {
+		assert.ok(error instanceof Error);
+		assert.ok(Buffer.byteLength(error.message) < MAX_OUTPUT_BYTES + 100);
+		assert.ok(error.message.endsWith("failure detail"));
+		return true;
+	});
 });
 test("line count is bounded even for short lines", async () => {
 	const result = await runBin(process.execPath, ["-e", "console.log('x\\n'.repeat(10000))"], { cwd: tmpdir(), timeoutMs: 5000 });

@@ -84,7 +84,7 @@ export function registerTodoTool(pi: ExtensionAPI, run: BinRunner, resolveBin: (
 					}
 					await requireClaim(projectRoot, tag, params.id, session);
 					if (task.status !== "in-progress") throw new Error(`Claimed task is ${task.status}; recover with /scud-release.`);
-					if (params.op === "done" || params.op === "commit") await assertVerified(projectRoot, signal);
+					if (params.op === "done" || params.op === "commit") await assertVerified(ctx.cwd, signal);
 					if (params.op === "commit") {
 						const result = checked(await run("git", ["commit", "-m", `[${key}] ${params.message ?? task.title}`], { cwd: projectRoot, signal, timeoutMs: 60_000 }));
 						return formatRun(result);
