@@ -1,6 +1,6 @@
 {
   "name": "@pyrex41/pi-extensions",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Pi coding-agent extensions: SCUD DAG todos and Shen-Backpressure verification gates",
   "type": "module",
   "license": "MIT",
@@ -40,7 +40,9 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node --test --experimental-strip-types tests/*.test.ts"
+    "test": "node --test --experimental-strip-types tests/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
@@ -63,7 +65,7 @@
     }
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.18.0"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.85.1",
@@ -71,7 +73,7 @@
     "@earendil-works/pi-tui": "^0.85.1",
     "@types/node": "^22.20.2",
     "typebox": "^1.3.30",
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "smol-toml": "^1.8.0"
