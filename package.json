@@ -1,7 +1,7 @@
 {
   "name": "@pyrex41/pi-extensions",
-  "version": "0.2.0",
-  "description": "Pi coding-agent extensions: SCUD DAG todos and Shen-Backpressure verification gates",
+  "version": "0.3.0",
+  "description": "Pi extensions for SCUD, Shen-Backpressure, model-independent advisory workflows and cheap background progress observation",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/pyrex41/pi-extensions",
@@ -18,12 +18,16 @@
     "pi-extension",
     "scud",
     "shen-backpressure",
-    "todo"
+    "todo",
+    "multi-agent",
+    "background-observer"
   ],
   "pi": {
     "extensions": [
       "./extensions/scud/index.ts",
-      "./extensions/shen-backpressure/index.ts"
+      "./extensions/shen-backpressure/index.ts",
+      "./extensions/workflows/index.ts",
+      "./extensions/observer/index.ts"
     ],
     "skills": [
       "./skills"
@@ -37,7 +41,8 @@
     "skills",
     "prompts",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "docs"
   ],
   "scripts": {
     "test": "node --test --experimental-strip-types tests/*.test.ts",
