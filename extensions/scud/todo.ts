@@ -1,56 +1,33 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
 import { Type } from "typebox";
-import { findOnPath, formatRun, missingBinMessage, type BinRunner, type RunResult } from "../lib/run.ts";
+import { findProject } from "../lib/project.ts";
+import { bounded, checked, findOnPath, formatRun, type BinRunner } from "../lib/run.ts";
+import { assertVerified } from "../shen-backpressure/verification.ts";
 import { planScud } from "./args.ts";
 import { TODO_TOOL_DESCRIPTION } from "./prompt.ts";
-import type { TodoDetails, TodoOp, TodoParams, Warmup } from "./types.ts";
-import { formatTaskList, getTodoWidgetLines, parseTaskList, parseWarmup } from "./widget.ts";
+import { assertReady, initScud, readClaims, requireClaim, saveClaims, setDependencies, withScudLock } from "./store.ts";
+import { TODO_OPS, type ScudTask, type TodoParams, type Warmup } from "./types.ts";
+import { getTodoWidgetLines, parseWarmup } from "./widget.ts";
 
-const TodoParamsSchema = Type.Object({
-	op: StringEnum([
-		"init",
-		"warmup",
-		"next",
-		"list",
-		"show",
-		"start",
-		"done",
-		"drop",
-		"append",
-		"stats",
-		"waves",
-		"commit",
-		"tags",
-	] as const),
-	id: Type.Optional(Type.String({ description: "SCUD task id, e.g. 1.2" })),
-	title: Type.Optional(Type.String({ description: "Task title for append" })),
-	items: Type.Optional(Type.Array(Type.String(), { description: "Titles for init/append" })),
-	status: Type.Optional(Type.String({ description: "Filter for list" })),
-	tag: Type.Optional(Type.String({ description: "Phase tag" })),
-	message: Type.Optional(Type.String({ description: "Commit message" })),
-	priority: Type.Optional(Type.String({ description: "critical, high, medium, low" })),
-	complexity: Type.Optional(Type.Number({ description: "Fibonacci complexity" })),
+const schema = Type.Object({
+	op: StringEnum(TODO_OPS), id: Type.Optional(Type.String()),
+	title: Type.Optional(Type.String()), items: Type.Optional(Type.Array(Type.String())),
+	status: Type.Optional(StringEnum(["pending", "in-progress", "done", "blocked", "failed", "review", "expanded", "deferred", "cancelled"] as const)),
+	tag: Type.Optional(Type.String()), message: Type.Optional(Type.String()),
+	priority: Type.Optional(StringEnum(["critical", "high", "medium", "low"] as const)),
+	complexity: Type.Optional(Type.Integer({ minimum: 1 })),
+	dependencies: Type.Optional(Type.Array(Type.String(), { description: "Replacement phase-local dependencies for op:dependencies" })),
 });
+export function scudInitialized(cwd: string): boolean { return !!findProject(cwd, ".scud"); }
+export function resolveScudBin(): string | undefined { return process.env.SCUD_BIN || findOnPath("scud"); }
 
-export function scudInitialized(cwd: string): boolean {
-	return existsSync(join(cwd, ".scud"));
-}
-
-export async function refreshScudWidget(
-	ctx: ExtensionContext,
-	run: BinRunner,
-	bin: string,
-): Promise<Warmup | undefined> {
-	const initialized = scudInitialized(ctx.cwd);
-	if (!initialized) {
-		ctx.ui.setWidget("todo-sidebar", getTodoWidgetLines(undefined, false));
-		return undefined;
-	}
-	const result = await run(bin, ["-C", ctx.cwd, "warmup", "--json"], { cwd: ctx.cwd, timeoutMs: 15_000 });
+export async function refreshScudWidget(ctx: ExtensionContext, run: BinRunner, bin: string): Promise<Warmup | undefined> {
+	if (!ctx.hasUI || !ctx.isProjectTrusted()) return;
+	const root = findProject(ctx.cwd, ".scud");
+	if (!root) { ctx.ui.setWidget("todo-sidebar", undefined); return; }
+	const result = await run(bin, ["-C", root, "warmup", "--json"], { cwd: root, timeoutMs: 15_000 });
 	const warmup = result.ok ? parseWarmup(result.stdout) : undefined;
 	ctx.ui.setWidget("todo-sidebar", getTodoWidgetLines(warmup, true));
 	return warmup;
@@ -58,100 +35,77 @@ export async function refreshScudWidget(
 
 export function registerTodoTool(pi: ExtensionAPI, run: BinRunner, resolveBin: () => string | undefined): void {
 	pi.registerTool({
-		name: "todo",
-		label: "SCUD",
-		description: TODO_TOOL_DESCRIPTION,
-		promptSnippet: "SCUD DAG todos: warmup/next/start/done against .scud/, reference tasks by id.",
-		promptGuidelines: [
-			"Use the todo tool (SCUD) for multi-step work. Reference tasks by SCUD id, not by guessed names.",
-			"Batch todo start/done with the real work; do not spend a turn only updating todos.",
-			"Call todo op:next when the next unblocked task is uncertain; do not invent a parallel checklist.",
-		],
-		parameters: TodoParamsSchema,
-		executionMode: "sequential",
-		async execute(_toolCallId, params: TodoParams, signal, onUpdate, ctx) {
+		name: "todo", label: "SCUD", description: TODO_TOOL_DESCRIPTION,
+		promptSnippet: "Manage an opted-in project's SCUD DAG with session-owned claims.",
+		promptGuidelines: ["Use todo for multi-step work only in an initialized SCUD project. Do not initialize task scaffolding without user approval."],
+		parameters: schema, executionMode: "sequential",
+		async execute(_id, params: TodoParams, signal, _update, ctx) {
+			if (!ctx.isProjectTrusted()) throw new Error("Trust this project in Pi before using its SCUD state.");
 			const bin = resolveBin();
-			if (!bin) {
-				const error = missingBinMessage(
-					"scud",
-					"Install from https://github.com/pyrex41/scud (binary to ~/.local/bin).",
-				);
-				return errorResult(params.op, error);
+			if (!bin) throw new Error("scud executable not found. Install pyrex41/scud or set SCUD_BIN.");
+			let root = findProject(ctx.cwd, ".scud");
+			if (params.op === "init") {
+				if (root) throw new Error("SCUD is already initialized; use append or tags instead.");
+				await initScud(ctx.cwd, bin, run, signal); root = ctx.cwd;
 			}
-
-			const plan = planScud(params);
-			if (plan.kind === "error") return errorResult(params.op, plan.error);
-
-			const outputs: string[] = [];
-			let last: RunResult | undefined;
-			for (const argv of plan.commands) {
-				onUpdate?.({ content: [{ type: "text", text: `scud ${argv.join(" ")}` }] });
-				last = await run(bin, ["-C", ctx.cwd, ...argv], {
-					cwd: ctx.cwd,
-					signal,
-					timeoutMs: params.op === "commit" ? 60_000 : 20_000,
-				});
-				outputs.push(formatRun(last));
-				if (!last.ok) {
-					await refreshScudWidget(ctx, run, bin);
-					return errorResult(params.op, outputs.join("\n\n"), last);
+			if (!root) throw new Error("SCUD is not initialized here. Only run init if the user wants SCUD enabled in this project.");
+			const projectRoot = root;
+			const session = ctx.sessionManager.getSessionId();
+			const exec = async (argv: string[]) => checked(await run(bin, ["-C", projectRoot, ...argv], {
+				cwd: projectRoot, signal, timeoutMs: 20_000, maxBytes: 8 * 1024 * 1024,
+			}));
+			const body = await withScudLock(projectRoot, async () => {
+				const warmup = JSON.parse((await exec(["warmup", "--json"])).stdout) as Warmup;
+				const claims = await readClaims(projectRoot);
+				const owned = Object.keys(claims).filter(k => claims[k]?.session === session && k.endsWith(`:${params.id}`));
+				const tag = params.tag ?? (owned.length === 1 ? owned[0]!.slice(0, owned[0]!.lastIndexOf(":")) : warmup.active_tag);
+				if (["start", "done", "drop", "release", "dependencies", "commit"].includes(params.op)) {
+					if (!params.id || !tag) throw new Error(`id and an explicit/resolved tag are required for ${params.op}`);
+					const tasks = JSON.parse((await exec(["list", "--json", "-t", tag])).stdout) as ScudTask[];
+					const task = tasks.find(t => t.id === params.id);
+					if (!task) throw new Error(`Unknown task ${tag}:${params.id}`);
+					const key = `${tag}:${params.id}`;
+					if (params.op === "start") {
+						if (claims[key]?.session === session && task.status === "in-progress") return `Already claimed ${key}`;
+						if (claims[key]) throw new Error(`Task ${key} is claimed by another session. Use /scud-release for explicit recovery.`);
+						assertReady(task, tasks);
+						// Persist ownership before changing status. A crash leaves a recoverable claim, never a second owner.
+						claims[key] = { session, at: new Date().toISOString() }; await saveClaims(projectRoot, claims);
+						await exec(["set-status", params.id, "in-progress", "-t", tag]);
+						return `Claimed ${key}: ${task.title}`;
+					}
+					if (params.op === "dependencies") {
+						if (claims[key]) throw new Error("Cannot modify a claimed task's dependencies.");
+						if (!params.dependencies) throw new Error("dependencies is required (use [] to clear).");
+						await setDependencies(projectRoot, bin, run, tag, params.id, params.dependencies, signal);
+						return `Updated dependencies for ${key}`;
+					}
+					await requireClaim(projectRoot, tag, params.id, session);
+					if (task.status !== "in-progress") throw new Error(`Claimed task is ${task.status}; recover with /scud-release.`);
+					if (params.op === "done" || params.op === "commit") await assertVerified(projectRoot, signal);
+					if (params.op === "commit") {
+						const result = checked(await run("git", ["commit", "-m", `[${key}] ${params.message ?? task.title}`], { cwd: projectRoot, signal, timeoutMs: 60_000 }));
+						return formatRun(result);
+					}
+					const status = params.op === "done" ? "done" : params.op === "drop" ? "cancelled" : "pending";
+					const result = await exec(["set-status", params.id, status, "-t", tag]);
+					delete claims[key]; await saveClaims(projectRoot, claims);
+					return formatRun(result);
 				}
-			}
-
-			const warmup = await refreshScudWidget(ctx, run, bin);
-			const combined = outputs.filter(Boolean).join("\n\n");
-			const details: TodoDetails = {
-				op: params.op,
-				ok: true,
-				tag: params.tag ?? warmup?.active_tag,
-				warmup,
-			};
-
-			if (params.op === "warmup" && last) {
-				const parsed = parseWarmup(last.stdout);
-				if (parsed) details.warmup = parsed;
-			}
-			if (params.op === "list" && last) {
-				details.tasks = parseTaskList(last.stdout);
-			}
-
-			const text =
-				params.op === "list" && details.tasks
-					? formatTaskList(details.tasks)
-					: combined || "ok";
-
-			return {
-				content: [{ type: "text", text }],
-				details,
-			};
+				const plan = planScud(params);
+				if (plan.kind === "error") throw new Error(plan.error);
+				const commands = params.op === "init" ? plan.commands.filter(c => c[0] !== "init") : plan.commands;
+				const output: string[] = [];
+				for (const argv of commands) output.push(formatRun(await exec(argv)));
+				return output.join("\n\n");
+			});
+			await refreshScudWidget(ctx, run, bin);
+			return { content: [{ type: "text", text: bounded(body) }], details: { op: params.op, ok: true } };
 		},
-		renderCall(args, theme) {
-			let text = theme.fg("toolTitle", theme.bold("todo ")) + theme.fg("muted", args.op);
-			if (args.id) text += ` ${theme.fg("accent", args.id)}`;
-			if (args.title) text += ` ${theme.fg("dim", `"${args.title}"`)}`;
-			if (args.tag) text += ` ${theme.fg("muted", `@${args.tag}`)}`;
-			return new Text(text, 0, 0);
-		},
-		renderResult(result, _options, theme) {
-			const details = result.details as TodoDetails | undefined;
-			if (details?.error) return new Text(theme.fg("error", details.error), 0, 0);
-			const text = result.content[0];
-			const body = text?.type === "text" ? text.text : "";
-			return new Text(theme.fg("muted", body), 0, 0);
+		renderCall: (args, theme) => new Text(theme.fg("toolTitle", `todo ${args.op ?? ""} ${args.id ?? ""}`), 0, 0),
+		renderResult(result, { expanded }, theme, context) {
+			const body = result.content.filter(c => c.type === "text").map(c => c.text).join("\n");
+			return new Text(theme.fg(context.isError ? "error" : "muted", expanded ? body : body.split("\n").slice(0, 8).join("\n")), 0, 0);
 		},
 	});
-}
-
-function errorResult(op: TodoOp, error: string, last?: RunResult) {
-	const details: TodoDetails = { op, ok: false, error };
-	return {
-		content: [{ type: "text", text: error }],
-		details,
-		isError: true as const,
-		...(last && !last.ok ? {} : {}),
-	};
-}
-
-export function resolveScudBin(): string | undefined {
-	return process.env.SCUD_BIN || findOnPath("scud");
 }

@@ -12,6 +12,8 @@ export const TODO_OPS = [
 	"waves",
 	"commit",
 	"tags",
+	"release",
+	"dependencies",
 ] as const;
 
 export type TodoOp = (typeof TODO_OPS)[number];
@@ -26,6 +28,7 @@ export type TodoParams = {
 	message?: string;
 	priority?: string;
 	complexity?: number;
+	dependencies?: string[];
 };
 
 export type ScudTask = {

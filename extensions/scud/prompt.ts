@@ -1,46 +1,25 @@
-export const TODO_TOOL_DESCRIPTION = `Project-local SCUD DAG todo list. Tasks live in .scud/ (not session memory). Reference tasks by their SCUD id (1, 1.2, 1.2.1), never by invented slugs.
+export const TODO_TOOL_DESCRIPTION = `SCUD task management for opted-in projects. Never initialize task scaffolding without user approval.
 
-A task is ready when status is pending and every dependency is done. scud next returns the highest-priority ready task. Completing a task unblocks dependents.
+Operations:
+- init: initialize .scud only (no Claude/OpenCode skills); optional tag (default main), items.
+- warmup / next / list / show / stats / waves / tags: inspect the project DAG. show needs id; list accepts status; tag overrides the active phase. tags with tag switches phase.
+- append: title or items; optional tag, priority, complexity.
+- dependencies: id, tag, dependencies (phase-local IDs; [] clears). Replaces edges on a pending task; rejects unknown IDs and cycles.
+- start: id, tag. Claims a ready task for this Pi session. Idempotent for the same owner; rejects other owners and unmet dependencies.
+- release: id, tag. Releases your claim and resets to pending.
+- done / drop: id, tag. Complete or cancel your claimed task and release ownership.
+- commit: id, tag, optional message. Commit already-staged changes with an explicit [tag:id] prefix. Never stages unrelated files. Must precede done.
 
-## Operations
-
-| op | Fields | Effect |
-|---|---|---|
-| init | items?: string[], tag? | scud init, set active tag (default main), optionally create those titles |
-| warmup | — | Session orientation: tag, stats, next task (JSON) |
-| next | tag? | Next ready task |
-| list | status?, tag? | List tasks (JSON) |
-| show | id, tag? | Task details (JSON) |
-| start | id, tag? | set-status in-progress |
-| done | id, tag? | set-status done |
-| drop | id, tag? | set-status cancelled |
-| append | title or items[], tag?, priority?, complexity? | Create task(s) |
-| stats | tag? | Phase statistics |
-| waves | tag? | Parallel execution waves |
-| commit | message? | Task-aware git commit, prefixes [TASK-ID] |
-| tags | tag? | List tags, or set active tag |
-
-Statuses: pending, in-progress, done, blocked, failed, review, expanded, deferred, cancelled.
-
-## Rules
-- On multi-step work: warmup or list first, then start the ready id, do the work, done immediately.
-- NEVER make a todo call the turn's only tool call — batch start/done with the real reads/edits.
-- Prefer next over guessing which task is unblocked.
-- Do not keep a parallel in-memory checklist. SCUD is the source of truth.
-- If .scud is missing, init before any other op.`;
+Claims and mutation locks coordinate Pi sessions only, NOT standalone scud/swarm writers. Do not mix those writers with Pi mutations. /scud-release TAG ID recovers abandoned claims with human confirmation.
+In SB-configured projects, done and commit require successful gates for current file contents.
+Outputs are bounded to a 24 KiB/950-line tail; use show/filtering for large lists.
+Use warmup/next, then start the ready ID, work, commit if requested, and done after verification.`;
 
 export const TASK_MANAGEMENT_SECTION = `
-<Task_Management>
-## SCUD Todo (CRITICAL)
-
-Use the todo tool for multi-step work. It is the SCUD DAG in this repo: hierarchical ids, dependencies, waves, and statuses on disk under .scud/.
-
-${TODO_TOOL_DESCRIPTION}
-
-## Evidence
-- File edit: inspect the changed files and diagnostics.
-- Build command: require exit code 0.
-- Test run: require passing output, or state the pre-existing failure.
-- Task done: only after the evidence above, then todo op:done with that id.
-</Task_Management>
+<SCUD>
+This project has opted into SCUD. Use the todo tool for multi-step implementation work.
+Reference real task IDs; do not invent a parallel task list. Inspect the DAG before claiming work.
+Verify changes before done. If committing, commit the explicitly claimed task BEFORE marking it done.
+Do not run standalone SCUD/swarm writers concurrently with Pi mutations.
+</SCUD>
 `;
