@@ -43,12 +43,17 @@ test("Pi RPC loads resources once and slash reports immediately enter message hi
 		const commands = await request("commands", "get_commands");
 		assert.equal(commands.success, true);
 		const names = commands.data.commands.map((c: any) => c.name);
-		for (const name of ["sb", "sb-gates", "sb-cancel", "sb-fix", "todos", "scud-release"]) assert.equal(names.filter((n: string) => n === name).length, 1, name);
+		for (const name of ["sb", "sb-gates", "sb-cancel", "sb-fix", "todos", "scud-release", "workflow", "observer", "how"]) assert.equal(names.filter((n: string) => n === name).length, 1, name);
 		assert.equal((await request("context", "prompt", { message: "/sb" })).success, true);
 		assert.equal((await request("todos", "prompt", { message: "/todos" })).success, true);
+		assert.equal((await request("workflow", "prompt", { message: "/workflow status" })).success, true);
+		assert.equal((await request("how", "prompt", { message: "/how" })).success, true);
 		const history = await request("history", "get_messages");
 		assert.ok(history.data.messages.some((m: any) => m.customType === "sb-report"));
 		assert.ok(history.data.messages.some((m: any) => m.customType === "scud-report"));
+		assert.ok(history.data.messages.some((m: any) => m.customType === "workflow-report"));
+		assert.ok(history.data.messages.some((m: any) => m.customType === "observer-shared"));
+		assert.equal(history.data.messages.filter((m: any) => m.role === "assistant").length, 0, "status commands must not start paid model turns");
 		assert.deepEqual(errors, []);
 		assert.doesNotMatch(stderr, /Failed to load extension|Error loading/);
 	} finally {

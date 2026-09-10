@@ -1,6 +1,17 @@
-# Pi extensions: SCUD + Shen-Backpressure
+# Pi extensions: SCUD, Shen-Backpressure, workflows and observer
 
 Project-local DAG tasks and verification workflows for Pi. Requires **Pi 0.85.1+**, **Node 22.18+**, and the `scud` / `sb` CLIs for the integrations you enable. Tested with SCUD 2.7.2 and SB 0.3.0; CI also builds pinned upstream revisions.
+
+## Model-independent workflows and cheap progress updates
+
+New in 0.3: a **tool-less advisory workflow runner** and an **opt-in background progress observer**, using any appropriately configured model in Pi's registry.
+
+- `/workflow`: model-routed planner/reviewer/skeptic/synthesis stages, validated DAGs, bounded parallelism, background status/cancel and branch-local resume.
+- `/observer on`: choose a cheap model and approve telemetry-only or public-notes scope. Summarizes changing activity without waking the main model; pauses on errors or exhausted limits.
+- `/how`: instant telemetry/cached-advice snapshot. While observation is enabled, an exact “btw, how's it going?” also uses this no-main-model path.
+- `/observer off`: stop observation. Nothing starts or spends money merely because the package is installed.
+
+Coding, shell execution, task ownership and actual verification stay in the main Pi session. This is an advisory V1, **not an autonomous coding swarm or full Grok/Ultracode clone**. See the [workbench guide](docs/WORKBENCH.md) and [source research](docs/WORKBENCH_RESEARCH.md) for commands, disclosure scope, budgets and limitations.
 
 ## Install / upgrade
 
