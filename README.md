@@ -11,12 +11,14 @@ Shen-Backpressure is a second extension: an `sb` tool plus `/sb` and `/sb-gates`
 Requires the `scud` and `sb` CLIs on `PATH` (or `SCUD_BIN` / `SB_BIN`). Pi 0.85+.
 
 ```bash
-# from a local checkout
+# from a local checkout (no npm install; Pi loads TypeScript in place)
 pi install /absolute/path/to/pi-extensions
 
 # from git
 pi install git:github.com/pyrex41/pi-extensions
 ```
+
+Pi already provides `@earendil-works/pi-*` and `typebox` at runtime. They are optional peerDependencies so `pi install git:…` does not download the Pi SDK into the clone.
 
 Remove any other extension that owns the `todo` tool name first:
 
