@@ -12,7 +12,9 @@ export const MAX_OUTPUT_BYTES = 24 * 1024;
 export class OutputBuffer {
 	private text = "";
 	private omitted = false;
-	constructor(private maxBytes = MAX_OUTPUT_BYTES, private maxLines = 950) {}
+	private maxBytes: number;
+	private maxLines: number;
+	constructor(maxBytes = MAX_OUTPUT_BYTES, maxLines = 950) { this.maxBytes = maxBytes; this.maxLines = maxLines; }
 	add(chunk: string): void {
 		this.text += chunk;
 		const bytes = Buffer.from(this.text);

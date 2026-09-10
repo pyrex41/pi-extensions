@@ -1,8 +1,7 @@
 import { StringEnum } from "@earendil-works/pi-ai";
 import { BorderedLoader, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { existsSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { Type } from "typebox";
 import { canonical, findProject } from "../lib/project.ts";
 import { bounded, checked, findOnPath, formatRun, runBin } from "../lib/run.ts";

@@ -7,9 +7,8 @@ import { refreshScudWidget, registerTodoTool, resolveScudBin, scudInitialized } 
 
 export default function scudExtension(pi: ExtensionAPI): void {
 	registerTodoTool(pi, runBin, resolveScudBin);
-	for (const event of ["session_start", "session_tree"] as const) {
-		pi.on(event, async (_event, ctx) => { const bin = resolveScudBin(); if (bin) await refreshScudWidget(ctx, runBin, bin); });
-	}
+	pi.on("session_start", async (_event, ctx) => { const bin = resolveScudBin(); if (bin) await refreshScudWidget(ctx, runBin, bin); });
+	pi.on("session_tree", async (_event, ctx) => { const bin = resolveScudBin(); if (bin) await refreshScudWidget(ctx, runBin, bin); });
 	pi.on("before_agent_start", (event, ctx) => {
 		if (!ctx.isProjectTrusted() || !scudInitialized(ctx.cwd)) return;
 		return { systemPrompt: `${event.systemPrompt}\n${TASK_MANAGEMENT_SECTION}` };

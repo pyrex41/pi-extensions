@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { BinRunner } from "../lib/run.ts";
 import { checked } from "../lib/run.ts";
