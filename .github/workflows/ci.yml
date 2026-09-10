@@ -1,0 +1,46 @@
+name: Pi integration
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: pyrex41/scud
+          ref: 096584565389afb76abda57402b11b18dcab7785
+          path: .ci/scud
+      - uses: actions/checkout@v4
+        with:
+          repository: pyrex41/Shen-Backpressure
+          ref: 6b9dde09b3a98ee5d20d0a6556acceacad4657d8
+          path: .ci/sb
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.18.0'
+          cache: npm
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.6'
+          cache-dependency-path: |
+            .ci/scud/go.sum
+            .ci/sb/cmd/sb/go.sum
+      - name: Build pinned upstream CLIs
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/pi-test-bin"
+          (cd .ci/scud && go build -o "$RUNNER_TEMP/pi-test-bin/scud" ./cmd/scud)
+          (cd .ci/sb/cmd/sb && go build -o "$RUNNER_TEMP/pi-test-bin/sb" .)
+          echo "$RUNNER_TEMP/pi-test-bin" >> "$GITHUB_PATH"
+      - run: npm ci
+      - run: npm run check
+      - run: npm pack --dry-run

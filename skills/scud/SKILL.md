@@ -1,33 +1,22 @@
 ---
 name: scud
-description: SCUD DAG task management for the pi coding agent. Use when the user asks about tasks, progress, the next task, waves, or wants to update task status.
+description: SCUD DAG tasks in opted-in projects. Use for task progress, ready work, dependency edges, claims, or status updates.
 ---
 
-# SCUD Task Management
+# SCUD for Pi
 
-SCUD organizes work as a directed acyclic graph of tasks with dependencies, priorities, and Fibonacci complexity. The `todo` tool in this package is the interface — do not shell out to `scud` unless the tool cannot express the operation.
+Use the `todo` tool for an existing SCUD project. Do not initialize task scaffolding during unrelated work. `init` requires user confirmation; headless initialization needs the user's `--allow-scud-init` flag. Pi installs only `.scud/`, not skills for other agents.
 
-## Workflow
+Workflow: `warmup` → `next` → `start` with the ready ID → work → verification → `commit` if requested → `done`. Commit **before** done. Do not make a parallel task list.
 
-1. **Orient**: `todo` op `warmup`
-2. **Claim**: `todo` op `start` with the ready id
-3. **Implement**: do the work (batch the start/done call with real edits)
-4. **Commit**: `todo` op `commit` (prefixes `[TASK-ID]`)
-5. **Complete**: `todo` op `done`
-6. **Repeat**: `todo` op `next`
+`start` checks pending status and effective dependencies, then claims the task for this Pi session. Another Pi session cannot start or complete that claim. `release` resets your task to pending. `/scud-release TAG ID` recovers an abandoned claim with human confirmation after the old worker has stopped.
 
-## Ready tasks and waves
+`dependencies` takes `id`, optional `tag`, and a replacement array of phase-local dependency IDs. `[]` clears edges. Only pending, unclaimed tasks can change; unknown IDs and cycles are rejected. Use `append` first to create tasks, then connect the returned IDs.
 
-A task is ready when its status is `pending` and every dependency is `done`. `todo` op `waves` groups ready work into parallel batches (Kahn topological sort). `todo` op `next` is the highest-priority ready task.
+`commit` requires `id` and ownership; specify `tag` when ambiguous. It commits already-staged files with `[tag:id]`, never arbitrary first-in-progress task selection or automatic staging. In an SB-configured project, `done`/`commit` require passing gates for current contents.
 
-## Statuses
+`list`, `show`, `stats`, `waves`, `tags` inspect the DAG. `tags` with `tag` selects a phase. `/todos` puts a bounded report in the transcript and model history.
 
-`pending` | `in-progress` | `done` | `blocked` | `failed` | `review` | `expanded` | `deferred` | `cancelled`
+Pi mutation locks coordinate **only Pi sessions**, not standalone SCUD/swarm writers. Never mix those writers concurrently. SCUD's dependency conversion uses its own serializer; stop external writers first. CLI-only heavy/swarm operations remain available through bash when needed, outside Pi mutation activity.
 
-## Tags
-
-Tasks are grouped by tag (phase/feature). `todo` op `tags` lists them; pass `tag` on other ops to override the active tag.
-
-## Heavy / swarm
-
-Deep multi-agent research (`scud heavy`) and parallel wave execution (`scud swarm`) stay on the CLI. Use bash for those; the todo tool covers the interactive coding loop.
+Project configuration is discovered from cwd/ancestors within the repository, not from nested sketches. Large output is bounded; prefer `show` or filtered `list` over inspecting raw task storage. For details and limitations, see [the package README](../../README.md).

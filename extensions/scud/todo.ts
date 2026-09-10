@@ -23,17 +23,18 @@ const schema = Type.Object({
 export function scudInitialized(cwd: string): boolean { return !!findProject(cwd, ".scud"); }
 export function resolveScudBin(): string | undefined { return process.env.SCUD_BIN || findOnPath("scud"); }
 
-export async function refreshScudWidget(ctx: ExtensionContext, run: BinRunner, bin: string): Promise<Warmup | undefined> {
+export async function refreshScudWidget(ctx: ExtensionContext, run: BinRunner, bin: string, signal?: AbortSignal): Promise<Warmup | undefined> {
 	if (!ctx.hasUI || !ctx.isProjectTrusted()) return;
 	const root = findProject(ctx.cwd, ".scud");
 	if (!root) { ctx.ui.setWidget("todo-sidebar", undefined); return; }
-	const result = await run(bin, ["-C", root, "warmup", "--json"], { cwd: root, timeoutMs: 15_000 });
+	const result = await run(bin, ["-C", root, "warmup", "--json"], { cwd: root, signal, timeoutMs: 15_000 });
 	const warmup = result.ok ? parseWarmup(result.stdout) : undefined;
 	ctx.ui.setWidget("todo-sidebar", getTodoWidgetLines(warmup, true));
 	return warmup;
 }
 
 export function registerTodoTool(pi: ExtensionAPI, run: BinRunner, resolveBin: () => string | undefined): void {
+	pi.registerFlag("allow-scud-init", { description: "Explicitly allow SCUD initialization in headless sessions", type: "boolean", default: false });
 	pi.registerTool({
 		name: "todo", label: "SCUD", description: TODO_TOOL_DESCRIPTION,
 		promptSnippet: "Manage an opted-in project's SCUD DAG with session-owned claims.",
@@ -46,6 +47,7 @@ export function registerTodoTool(pi: ExtensionAPI, run: BinRunner, resolveBin: (
 			let root = findProject(ctx.cwd, ".scud");
 			if (params.op === "init") {
 				if (root) throw new Error("SCUD is already initialized; use append or tags instead.");
+				if (!pi.getFlag("allow-scud-init") && (!ctx.hasUI || !await ctx.ui.confirm("Enable SCUD?", `Create project-local .scud task state in ${ctx.cwd}?`))) throw new Error("SCUD initialization requires user approval (headless: --allow-scud-init).");
 				await initScud(ctx.cwd, bin, run, signal); root = ctx.cwd;
 			}
 			if (!root) throw new Error("SCUD is not initialized here. Only run init if the user wants SCUD enabled in this project.");
@@ -99,7 +101,7 @@ export function registerTodoTool(pi: ExtensionAPI, run: BinRunner, resolveBin: (
 				for (const argv of commands) output.push(formatRun(await exec(argv)));
 				return output.join("\n\n");
 			});
-			await refreshScudWidget(ctx, run, bin);
+			await refreshScudWidget(ctx, run, bin, signal);
 			return { content: [{ type: "text", text: bounded(body) }], details: { op: params.op, ok: true } };
 		},
 		renderCall: (args, theme) => new Text(theme.fg("toolTitle", `todo ${args.op ?? ""} ${args.id ?? ""}`), 0, 0),

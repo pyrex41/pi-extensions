@@ -27,8 +27,8 @@ export default function scudExtension(pi: ExtensionAPI): void {
 					return reports.join("\n\n");
 				});
 				await refreshScudWidget(ctx, runBin, bin);
-				pi.sendMessage({ customType: "scud-report", content: bounded(body), display: true }, { deliverAs: "nextTurn" });
-			} catch (error) { pi.sendMessage({ customType: "scud-report", content: bounded(String(error)), display: true }, { deliverAs: "nextTurn" }); }
+				pi.sendMessage({ customType: "scud-report", content: bounded(body), display: true }, { triggerTurn: false });
+			} catch (error) { pi.sendMessage({ customType: "scud-report", content: bounded(String(error)), display: true }, { triggerTurn: false }); }
 		},
 	});
 	pi.registerCommand("scud-release", {

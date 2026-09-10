@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 export function findProject(cwd: string, marker: string): string | undefined {
 	let dir = resolve(cwd);
@@ -15,6 +15,6 @@ export function findProject(cwd: string, marker: string): string | undefined {
 export function canonical(path: string): string {
 	try { return realpathSync(path); } catch {
 		const parent = dirname(path);
-		return parent === path ? path : join(canonical(parent), path.slice(parent.length + 1));
+		return parent === path ? path : join(canonical(parent), basename(path));
 	}
 }

@@ -84,8 +84,8 @@ export async function setDependencies(root: string, bin: string, run: BinRunner,
 	try {
 		await writeFile(join(stage, "tasks.scg"), original);
 		const json = checked(await run(bin, ["convert", join(stage, "tasks.scg"), "--format", "json"], { cwd: root, signal, timeoutMs: 20_000, maxBytes: 8 * 1024 * 1024 }));
-		const phases = JSON.parse(json.stdout) as Record<string, { tasks: ScudTask[] }>;
-		const tasks = phases[tag]?.tasks;
+		const phases = JSON.parse(json.stdout) as Record<string, { Tasks: ScudTask[] }>;
+		const tasks = phases[tag]?.Tasks;
 		if (!tasks) throw new Error(`Unknown phase ${tag}`);
 		validateDependencies(tasks, id, dependencies);
 		const task = tasks.find(t => t.id === id)!;

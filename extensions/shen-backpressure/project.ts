@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync, readFileSync } from "node:fs";
-import { lstat, readdir, readlink } from "node:fs/promises";
+import { lstat, readdir, readlink, stat as followStat } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { parse } from "smol-toml";
 import { canonical, findProject } from "../lib/project.ts";
 import { checked, runBin } from "../lib/run.ts";
 
 export type SbProject = { root: string; spec: string; output: string };
-export function getSbProject(cwd: string): SbProject | undefined {
+export function getSbProject(cwd: string, requireSpec = true): SbProject | undefined {
 	const root = findProject(cwd, "sb.toml");
 	if (!root) return undefined;
 	const manifest = parse(readFileSync(join(root, "sb.toml"), "utf8"));
@@ -21,7 +21,7 @@ export function getSbProject(cwd: string): SbProject | undefined {
 		const rel = relative(canonical(root), canonical(path));
 		if (rel === ".." || rel.startsWith("../") || isAbsolute(rel)) throw new Error("SB spec/output must stay inside the project root.");
 	}
-	if (!existsSync(spec)) throw new Error(`SB spec missing: ${paths.spec}. Project is not armed.`);
+	if (requireSpec && !existsSync(spec)) throw new Error(`SB spec missing: ${paths.spec}. Project is not armed.`);
 	return { root, spec, output };
 }
 
@@ -58,7 +58,8 @@ export async function fingerprint(project: SbProject, excludeOutput = false, sig
 	for (const file of [...new Set(files)].sort()) {
 		signal?.throwIfAborted();
 		const path = resolve(project.root, file);
-		if (file.split(/[\\/]/).some(part => SKIP.has(part))) continue;
+		const explicit = [join(project.root, "sb.toml"), project.spec, project.output].includes(path);
+		if (!explicit && file.split(/[\\/]/).some(part => SKIP.has(part))) continue;
 		if (excludeOutput && canonical(path) === canonical(project.output)) continue;
 		hash.update(file).update("\0");
 		let stat;
@@ -66,8 +67,15 @@ export async function fingerprint(project: SbProject, excludeOutput = false, sig
 			if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
 			hash.update("missing\0"); continue;
 		}
-		if (stat.isSymbolicLink()) hash.update(await readlink(path));
-		else if (stat.isFile()) {
+		if (stat.isSymbolicLink()) {
+			hash.update(await readlink(path));
+			const rel = relative(canonical(project.root), canonical(path));
+			if (rel === ".." || rel.startsWith("../") || isAbsolute(rel)) throw new Error(`Cannot fingerprint external symlink input: ${file}`);
+			stat = await followStat(path);
+			if (stat.isDirectory()) throw new Error(`Cannot fingerprint directory symlink input: ${file}`);
+		}
+		hash.update(String(stat.mode)).update("\0");
+		if (stat.isFile()) {
 			for await (const chunk of createReadStream(path, { signal })) hash.update(chunk);
 		} else hash.update("directory");
 		hash.update("\0");

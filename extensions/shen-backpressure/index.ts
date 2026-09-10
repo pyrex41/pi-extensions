@@ -18,6 +18,7 @@ const schema = Type.Object({
 });
 
 export default function shenBackpressureExtension(pi: ExtensionAPI): void {
+	pi.registerFlag("allow-sb-init", { description: "Explicitly allow SB initialization in headless sessions", type: "boolean", default: false });
 	let commandAbort: AbortController | undefined;
 	function widget(ctx: ExtensionContext, root?: string, error?: string) {
 		if (ctx.hasUI) ctx.ui.setWidget("sb-status", root
@@ -33,6 +34,7 @@ export default function shenBackpressureExtension(pi: ExtensionAPI): void {
 		let root = ctx.cwd;
 		if (params.op === "init") {
 			if (findProject(root, "sb.toml")) throw new Error("SB already configured; init will not overwrite it.");
+			if (!pi.getFlag("allow-sb-init") && (!ctx.hasUI || !await ctx.ui.confirm("Enable Shen-Backpressure?", `Scaffold SB configuration and support files in ${root}?`))) throw new Error("SB initialization requires user approval (headless: --allow-sb-init).");
 		} else {
 			const project = getSbProject(ctx.cwd);
 			if (!project) throw new Error("SB is unconfigured: no sb.toml at the project root or an ancestor within this repository. Nested sketches are not activated automatically. Wire an explicit manifest; do not treat convention defaults as verification.");
@@ -82,7 +84,7 @@ export default function shenBackpressureExtension(pi: ExtensionAPI): void {
 		const root = findProject(ctx.cwd, "sb.toml");
 		if (!root) return;
 		try {
-			const project = getSbProject(ctx.cwd)!;
+			const project = getSbProject(ctx.cwd, false)!;
 			if (event.toolName === "edit" || event.toolName === "write") {
 				const path = event.input.path;
 				if (typeof path === "string" && canonical(resolve(ctx.cwd, path.replace(/^@/, ""))) === canonical(project.output)) {
@@ -123,7 +125,7 @@ export default function shenBackpressureExtension(pi: ExtensionAPI): void {
 							return loader;
 						});
 					} else report = await work();
-					pi.sendMessage({ customType: "sb-report", content: report, display: true }, { deliverAs: "nextTurn" });
+					pi.sendMessage({ customType: "sb-report", content: report, display: true }, { triggerTurn: false });
 				} finally { commandAbort = undefined; }
 			},
 		});

@@ -1,6 +1,6 @@
 ---
-name: sb-gates
-description: Run Shen-Backpressure gates and treat failures as backpressure
+name: sb-fix
+description: Inspect and resolve Shen-Backpressure gate failures
 ---
 
-Run `sb` op `context`, then `sb` op `gates`. If any gate fails, that failure is backpressure: fix it before any other work. Do not edit generated guard files. Change `specs/core.shen` and regenerate if the spec is the cause.
+For an explicitly configured SB project, run `sb` op `context`, then `sb` op `gates`. Resolve failures before continuing implementation. Follow the manifest's actual spec/output paths; never hand-edit generated guards. If SB is unconfigured, report that rather than creating scaffolding or activating nested sketches without approval.
